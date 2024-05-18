@@ -1,4 +1,4 @@
-pragma solidity ^0.4.25;
+pragma solidity >=0.4.25;
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 
@@ -11,7 +11,6 @@ contract FlightSuretyData {
 
     address private contractOwner; // Account used to deploy contract
     bool private operational = true; // Blocks all state changes throughout the contract if false
-
     // address payable public dataContractAddress;
     mapping(address => uint256) private authorizedContracts;
 
@@ -41,22 +40,6 @@ contract FlightSuretyData {
     uint8 private constant MULTIPARTY_MIN_AIRLINES = 4;
     uint256 public airlinesCount;
 
-    mapping(address => bool) public isAirline;
-    uint256 public airlineCount = 0;
-    mapping(address => uint256) private votes;
-
-    // Maps a flight key to an array of insurees who bought insurance for that flight
-    mapping(bytes32 => address[]) private insureesPerFlight;
-
-    // Maps a flight key and an insuree's address to the amount insured
-    mapping(bytes32 => mapping(address => uint256)) private insuredAmounts;
-
-    // To credit insurees, we also need a mapping to store credits
-    mapping(address => uint256) private credits;
-
-    mapping(address => uint256) public funds;
-    mapping(address => bool) private authorizedCallers;
-
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
     /********************************************************************************************/
@@ -71,7 +54,7 @@ contract FlightSuretyData {
         authorizedContracts[msg.sender] = 1;
         passengerAddresses = new address[](0);
 
-        //  First airline is registered when contract is deployed.
+        // 	First airline is registered when contract is deployed.
         airlines[msg.sender] = Airline({
             airlineWallet: msg.sender,
             isRegistered: true,
@@ -82,6 +65,7 @@ contract FlightSuretyData {
         });
         airlinesCount++;
     }
+
     /********************************************************************************************/
     /*                                       FUNCTION MODIFIERS                                 */
     /********************************************************************************************/
@@ -106,6 +90,10 @@ contract FlightSuretyData {
         require(msg.sender == contractOwner, "Caller is not contract owner");
         _;
     }
+
+    /**
+     * @dev Modifier that requires the calling App contract has been authorized
+     */
     modifier requireIsCallerAuthorized() {
         require(
             authorizedContracts[msg.sender] == 1,
@@ -118,22 +106,6 @@ contract FlightSuretyData {
     /*                                       UTILITY FUNCTIONS                                  */
     /********************************************************************************************/
 
-    function authorizeCaller(address _caller) public {
-        require(msg.sender == contractOwner, "Caller is not contract owner");
-        authorizedCallers[_caller] = true;
-    }
-
-    function isAuthorized(
-        address contractAddress
-    ) external view returns (bool) {
-        return (authorizedCallers[contractAddress]);
-    }
-
-    function deauthorizeCaller(
-        address contractAddress
-    ) external requireContractOwner {
-        delete authorizedContracts[contractAddress];
-    }
     /**
      * @dev Get operating status of contract
      *
@@ -141,6 +113,24 @@ contract FlightSuretyData {
      */
     function isOperational() public view returns (bool) {
         return operational;
+    }
+
+    function authorizeCaller(
+        address contractAddress
+    ) external requireContractOwner {
+        authorizedContracts[contractAddress] = 1;
+    }
+
+    function isAuthorized(
+        address contractAddress
+    ) external view returns (bool) {
+        return (authorizedContracts[contractAddress] == 1);
+    }
+
+    function deauthorizeCaller(
+        address contractAddress
+    ) external requireContractOwner {
+        delete authorizedContracts[contractAddress];
     }
 
     /**
@@ -162,11 +152,6 @@ contract FlightSuretyData {
 
     function isRegistered(address airline) public view returns (bool) {
         return (airlines[airline].isRegistered);
-    }
-
-    function isConsensus(address airline) internal view returns (bool) {
-        uint256 requiredVotes = airlineCount / 2 + 1; // More than 50% of the registered airlines
-        return votes[airline] >= requiredVotes;
     }
 
     /**
@@ -215,7 +200,7 @@ contract FlightSuretyData {
 
     function getAirlineVotes(
         address airline
-    ) public view returns (uint256 airlineVotes) {
+    ) public view returns (uint256 votes) {
         return (airlines[airline].votes);
     }
 
@@ -294,13 +279,6 @@ contract FlightSuretyData {
      *  @dev Transfers eligible payout funds to insuree
      *
      */
-    function pay() external pure {
-        // uint256 credit = credits[msg.sender];
-        // require(credit > 0, "No credit available");
-        // credits[msg.sender] = 0;
-        // msg.sender.transfer(credit);
-    }
-
     function withdraw(
         address insuredPassenger
     )
@@ -332,14 +310,6 @@ contract FlightSuretyData {
         );
     }
 
-    function isAirline(address airline) external view returns (bool) {
-        if (airlines[airline].airlineWallet == airline) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
     /**
      * @dev Initial funding for the insurance. Unless there are too many delayed flights
      *      resulting in insurance payouts, the contract should be self-sustaining
@@ -348,6 +318,14 @@ contract FlightSuretyData {
     function fund() public payable requireIsOperational {
         uint256 currentFunds = airlines[msg.sender].funded;
         airlines[msg.sender].funded = currentFunds.add(msg.value);
+    }
+
+    function isAirline(address airline) external view returns (bool) {
+        if (airlines[airline].airlineWallet == airline) {
+            return true;
+        } else {
+            return false;
+        }
     }
 
     function getFlightKey(
